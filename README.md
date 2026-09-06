@@ -1,4 +1,4 @@
-# 🤖 mi-IA-local
+# mi-IA-local
 
 > Asistente de inteligencia artificial local en desarrollo.
 
@@ -134,7 +134,7 @@ mi-IA-local/
 
 ---
 
-## 🤖 Desarrollo con IA
+## Desarrollo con IA
 
 El proyecto utiliza herramientas de inteligencia artificial para asistir en el desarrollo.
 
