@@ -124,8 +124,11 @@ y utilizar Qwen3 8B.
 
 Objetivo:
 
-Crear una interfaz propia para conversar con la IA y administrar
-el historial.
+Crear una interfaz propia para conversar con la IA.
+
+En v0.2 existirá únicamente contexto/historial temporal de la
+sesión, en memoria. La persistencia del historial pertenece a
+v0.3 — Memoria.
 
 ### v0.3 — Memoria
 

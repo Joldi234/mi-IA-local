@@ -81,7 +81,7 @@ Convertir el prototipo en una aplicación más cómoda para utilizar.
 * Mostrar estados de carga.
 * Manejar errores de comunicación.
 * Permitir iniciar una nueva conversación.
-* Mantener temporalmente el contexto de la conversación.
+* Mantener temporalmente el contexto/historial de la conversación (solo durante la sesión).
 
 ### Tecnologías previstas
 
@@ -103,7 +103,7 @@ Qwen3 8B
 
 ### No implementar todavía
 
-* Memoria permanente.
+* Memoria permanente y persistencia del historial (corresponden a v0.3).
 * Internet.
 * Agentes autónomos.
 * Herramientas peligrosas.
