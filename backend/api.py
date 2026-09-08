@@ -1,5 +1,7 @@
 import logging
 
+from contextlib import asynccontextmanager
+
 from typing import Literal
 
 from fastapi import Depends
@@ -21,11 +23,21 @@ from backend.storage import (
     create_conversation,
     delete_message,
     get_conversation,
+    init_db,
     list_conversations,
     list_messages,
 )
 
-app = FastAPI(title="mi-IA-local API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Inicializa la base SQLite al arrancar para que una instalación limpia
+    # funcione sin ejecutar init_db() manualmente. Usa la misma ruta que los
+    # endpoints (get_db_path), por lo que en tests respeta dependency_overrides.
+    resolve_db_path = app.dependency_overrides.get(get_db_path, get_db_path)
+    init_db(resolve_db_path())
+    yield
+
+app = FastAPI(title="mi-IA-local API", lifespan=lifespan)
 logger = logging.getLogger("backend.api")
 
 
