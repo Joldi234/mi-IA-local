@@ -1,8 +1,13 @@
+import logging
+
 from typing import Literal
 
+from fastapi import Depends
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.config import DATABASE_PATH
+from backend.models import Conversation, ConversationCreate, MessageRequest, StoredMessage
 from backend.ollama_client import (
     OllamaClient,
     OllamaConnectionError,
@@ -10,8 +15,18 @@ from backend.ollama_client import (
     OllamaModelError,
     OllamaTimeoutError,
 )
+from backend.storage import (
+    StorageError,
+    add_message,
+    create_conversation,
+    delete_message,
+    get_conversation,
+    list_conversations,
+    list_messages,
+)
 
 app = FastAPI(title="mi-IA-local API")
+logger = logging.getLogger("backend.api")
 
 
 class Message(BaseModel):
@@ -55,3 +70,129 @@ def chat(request: ChatRequest):
     finally:
         client.close()
     return ChatResponse(reply=reply)
+
+
+def get_db_path() -> str:
+    return DATABASE_PATH
+
+
+def _map_ollama_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, OllamaConnectionError):
+        return HTTPException(
+            status_code=503,
+            detail="No se pudo conectar con Ollama. Verifique que esté ejecutándose.",
+        )
+    if isinstance(exc, OllamaModelError):
+        return HTTPException(
+            status_code=404,
+            detail="El modelo configurado no existe en Ollama.",
+        )
+    if isinstance(exc, OllamaTimeoutError):
+        return HTTPException(
+            status_code=504,
+            detail="La conexión con Ollama expiró. El modelo puede estar cargando.",
+        )
+    if isinstance(exc, OllamaHTTPError):
+        return HTTPException(
+            status_code=502,
+            detail="Ollama devolvió un error al procesar la solicitud.",
+        )
+    return HTTPException(status_code=500, detail="Error de almacenamiento.")
+
+
+@app.post("/api/conversations", response_model=Conversation, status_code=201)
+def post_conversation(request: ConversationCreate, db_path: str = Depends(get_db_path)):
+    try:
+        return create_conversation(db_path, title=request.title)
+    except StorageError:
+        raise HTTPException(status_code=500, detail="Error de almacenamiento.")
+
+
+@app.get("/api/conversations", response_model=list[Conversation])
+def get_conversations(db_path: str = Depends(get_db_path)):
+    try:
+        return list_conversations(db_path)
+    except StorageError:
+        raise HTTPException(status_code=500, detail="Error de almacenamiento.")
+
+
+@app.get("/api/conversations/{conversation_id}", response_model=Conversation)
+def get_conversation_by_id(conversation_id: int, db_path: str = Depends(get_db_path)):
+    try:
+        conversation = get_conversation(db_path, conversation_id)
+    except StorageError:
+        raise HTTPException(status_code=500, detail="Error de almacenamiento.")
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="La conversación no existe.")
+    return conversation
+
+
+@app.get(
+    "/api/conversations/{conversation_id}/messages",
+    response_model=list[StoredMessage],
+)
+def get_conversation_messages(
+    conversation_id: int, db_path: str = Depends(get_db_path)
+):
+    try:
+        conversation = get_conversation(db_path, conversation_id)
+    except StorageError:
+        raise HTTPException(status_code=500, detail="Error de almacenamiento.")
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="La conversación no existe.")
+    try:
+        return list_messages(db_path, conversation_id)
+    except StorageError:
+        raise HTTPException(status_code=500, detail="Error de almacenamiento.")
+
+
+@app.post(
+    "/api/conversations/{conversation_id}/messages",
+    response_model=StoredMessage,
+    status_code=201,
+)
+def post_conversation_message(
+    conversation_id: int,
+    request: MessageRequest,
+    db_path: str = Depends(get_db_path),
+):
+    try:
+        conversation = get_conversation(db_path, conversation_id)
+    except StorageError:
+        raise HTTPException(status_code=500, detail="Error de almacenamiento.")
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="La conversación no existe.")
+
+    try:
+        user_msg = add_message(db_path, conversation_id, "user", request.content)
+        history = list_messages(db_path, conversation_id)
+    except StorageError:
+        raise HTTPException(status_code=500, detail="Error de almacenamiento.")
+
+    payload = [{"role": m.role, "content": m.content} for m in history]
+
+    client = OllamaClient()
+    try:
+        reply = client.send_messages(payload)
+    except (
+        OllamaConnectionError,
+        OllamaModelError,
+        OllamaTimeoutError,
+        OllamaHTTPError,
+    ) as exc:
+        try:
+            delete_message(db_path, user_msg.id)
+        except Exception as err:
+            logger.error(
+                "No se pudo eliminar el mensaje del usuario tras el fallo de Ollama: %s",
+                err,
+            )
+        raise _map_ollama_error(exc)
+    finally:
+        client.close()
+
+    try:
+        assistant_msg = add_message(db_path, conversation_id, "assistant", reply)
+    except StorageError:
+        raise HTTPException(status_code=500, detail="Error de almacenamiento.")
+    return assistant_msg

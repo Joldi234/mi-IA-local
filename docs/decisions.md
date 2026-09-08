@@ -316,6 +316,85 @@ Una API sin estado elimina estructuralmente la posibilidad de persistir datos si
 
 ---
 
+# ADR-014 — Capa de persistencia en SQLite para v0.3-A
+
+**Estado:** Aceptada
+
+**Fecha:** 2026-09-07
+
+## Contexto
+
+El roadmap establece que v0.3 agrega almacenamiento local y memoria persistente (historial de conversaciones). La v0.2 es stateless y mantiene el historial únicamente en memoria del frontend (ADR-013). El backend no almacena estado y las decisiones previas ya fijaron SQLite como base de datos (ADR-004).
+
+## Decisión
+
+Implementar una capa de persistencia para v0.3-A que cumpla la fase de **almacenamiento** —sin exponerla todavía por la API—:
+
+- **SQLite** con el módulo `sqlite3` de la stdlib y **sin ORM**.
+- Nuevo módulo `backend/storage.py` con funciones que abren y cierran su propia conexión por llamada: `init_db`, `create_conversation`, `list_conversations`, `get_conversation`, `add_message` y `list_messages`.
+- Esquema de dos tablas: `conversations` (IDs `INTEGER PRIMARY KEY AUTOINCREMENT`, `title`, `created_at`, `updated_at`) y `messages` (`conversation_id` con FK a `conversations` `ON DELETE CASCADE`, `role` con `CHECK (role IN ('user', 'assistant'))`, `content`, `created_at`), más un índice sobre `messages(conversation_id)`.
+- Modelos pydantic v2 en `backend/models.py` (`Conversation`, `ConversationCreate`, `StoredMessage`, `StoredMessageCreate`) para representar los registros almacenados.
+- Constante `DATABASE_PATH` en `backend/config.py`, configurable mediante la variable de entorno `DATABASE_PATH` con valor por defecto `./data/mi-ia-local.db`; el archivo de base de datos se ejecuta fuera de Git.
+- Los errores de base de datos se traducen a `StorageError` y la ausencia de una conversación al agregar mensajes lanza `ConversationNotFoundError`, en el estilo plano con mensajes en español ya usado en el proyecto.
+
+## Motivo
+
+SQLite con la stdlib cubre el caso local-first sin agregar dependencias ni un servidor de base de datos. IDs enteros autoincrementales son simples y suficientes para un historial local. Cada función abre y cierra su propia conexión (con `PRAGMA foreign_keys = ON` y commit al confirmar), lo que hace que la persistencia sea natural entre llamadas y mantenga aislados los fallos de conexión.
+
+## Consecuencias
+
+- El historial de conversaciones y mensajes queda persistido en un archivo local dentro de `data/`, que se agrega a `.gitignore`.
+- La API HTTP de v0.3-B deberá integrar esta capa de almacenamiento y convertirse en una API con estado persistente; la integración queda deliberadamente fuera de v0.3-A.
+- Si el proyecto supera las necesidades de SQLite, se evaluarán alternativas (ADR-004).
+
+## Alternativas consideradas
+
+- **ORM (SQLAlchemy)**: agrega una dependencia y complejidad innecesarias para dos tablas simples de historial local.
+- **Persistir en JSON**: sin integridad referencial ni consultas; SQLite con la stdlib es igual de simple y más robusto.
+
+---
+
+# ADR-015 — API con conversaciones persistentes para v0.3-B
+
+**Estado:** Aceptada
+
+**Fecha:** 2026-09-07
+
+## Contexto
+
+La v0.3-A implementó la capa de persistencia SQLite (`backend/storage.py`) sin exponerla por la API. La v0.2 expone únicamente `POST /api/chat` stateless (ADR-013), y el frontend mantiene el historial en memoria. El roadmap establece que v0.3 convierte la API en una API con estado persistente.
+
+## Decisión
+
+Exponer la capa de persistencia mediante cinco endpoints REST de conversaciones y mensajes, manteniendo **`POST /api/chat` de v0.2 intacto y compatible** de forma temporal:
+
+- `POST /api/conversations` — crear una conversación (201).
+- `GET /api/conversations` — listar conversaciones (orden por `updated_at` DESC).
+- `GET /api/conversations/{id}` — obtener una conversación (404 si no existe).
+- `GET /api/conversations/{id}/messages` — listar mensajes en orden cronológico (404 si la conversación no existe).
+- `POST /api/conversations/{id}/messages` — enviar y persistir un mensaje: persiste el mensaje del usuario, recupera el historial completo, llama a Ollama y persiste la respuesta del asistente (201 con el mensaje del asistente persistido).
+
+La coordinación vive en `api.py` (dependency `get_db_path()` inyectable para pruebas): `storage.py` no conoce FastAPI ni Ollama, y `ollama_client.py` no conoce SQLite. La ruta de la base de datos se inyecta en los tests mediante `dependency_overrides` con una BD temporal en `tmp_path`; la base real `data/mi-ia-local.db` nunca se usa en las pruebas.
+
+## Motivo
+
+Mantener `POST /api/chat` sin cambios preserva la compatibilidad con el frontend de v0.2 y con sus pruebas (la regresión de 33 tests queda intacta). Los endpoints REST nuevos son el contrato al que migrará el frontend (v0.3-C); cuando migre, `/api/chat` podrá deprecarse como decisión separada. La inyección de la ruta de BD mediante dependency de FastAPI permite probar la API con bases aisladas sin acoplar el código a variables globales.
+
+## Consecuencias
+
+- La API pasa a tener estado persistente: las conversaciones y mensajes creados sobreviven a reinicios.
+- Ante un fallo de Ollama, el mensaje del usuario recién creado se elimina (rollback) y se devuelve el mismo código HTTP que `/api/chat` (503/404/504/502), para que un reintento no duplique mensajes. Si el rollback falla, el error se registra explícitamente en el log y no se oculta.
+- No se mantiene una transacción SQLite abierta durante la llamada a Ollama: cada operación de storage abre y cierra su propia conexión (patrón de v0.3-A).
+- El frontend de v0.2 continúa usando `POST /api/chat` hasta su migración (v0.3-C o posterior).
+- Se agregan `PRAGMA busy_timeout = 3000` en `connect()` y la operación `delete_message` en `storage.py` para soportar el rollback.
+
+## Alternativas consideradas
+
+- **Evolucionar `POST /api/chat`** para aceptar `conversation_id`: rompe el contrato de v0.2, el frontend actual y sus pruebas; innecesario para esta fase.
+- **Envolver `POST /api/chat`** sobre el nuevo flujo: agrega indirección sin beneficio real mientras el frontend no migre.
+
+---
+
 # Registro de cambios
 
 Las nuevas decisiones importantes deberán agregarse siguiendo el formato:
