@@ -2,7 +2,7 @@
 
 > Asistente de inteligencia artificial local en desarrollo.
 
-## 📌 Descripción
+## Descripción
 
 **mi-IA-local** es un proyecto experimental cuyo objetivo es desarrollar un asistente de inteligencia artificial capaz de ejecutarse localmente en el equipo del usuario.
 
@@ -14,7 +14,7 @@ Actualmente, la IA se identifica como **Prototipo**.
 
 ---
 
-## 🎯 Objetivo
+## Objetivo
 
 Crear un asistente que pueda evolucionar desde un sistema básico de conversación hasta un sistema capaz de:
 
@@ -32,7 +32,7 @@ El proyecto será desarrollado de manera incremental para mantener el sistema es
 
 ---
 
-## 🧠 Tecnología principal
+## Tecnología principal
 
 ### Modelo de lenguaje
 
@@ -46,7 +46,7 @@ Ollama permite ejecutar el modelo de lenguaje localmente y proporciona una inter
 
 ---
 
-## 💻 Hardware de desarrollo
+## Hardware de desarrollo
 
 El proyecto está siendo desarrollado principalmente en el siguiente equipo:
 
@@ -62,7 +62,7 @@ Las decisiones técnicas deberán considerar especialmente la capacidad de VRAM 
 
 ---
 
-## 🔐 Filosofía
+## Filosofía
 
 El proyecto seguirá principalmente estos principios:
 
@@ -111,7 +111,7 @@ Para conocer el roadmap completo:
 
 ---
 
-## 📁 Estructura del proyecto
+## Estructura del proyecto
 
 ```text
 mi-IA-local/
@@ -146,7 +146,7 @@ La IA utilizada para programar no debe asumir automáticamente que una caracter�
 
 ---
 
-## 📊 Estado actual
+## Estado actual
 
 **Estado:** Prototipo inicial
 
@@ -167,7 +167,3 @@ La IA utilizada para programar no debe asumir automáticamente que una caracter�
 * [ ] Establecer la arquitectura inicial del backend.
 
 ---
-
-## 📄 Licencia
-
-La licencia del proyecto se decidirá posteriormente.
